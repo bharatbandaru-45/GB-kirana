@@ -58,5 +58,35 @@
 
     <p id="message"></p>
   </main>
+  
+<script type="module">
+  import { auth } from "./firebase.js";
+  import {
+    signInWithEmailAndPassword
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+  const form = document.getElementById("loginForm");
+  const message = document.getElementById("message");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    message.textContent = "Logging in...";
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      message.textContent = "Login successful!";
+      window.location.href = "dashboard.html";
+    } catch (error) {
+      message.textContent = "Login failed. Check your email and password.";
+    }
+  });
+</script>
+</body>
+</html>
+
 </body>
 </html>
