@@ -5,51 +5,78 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GB KIRANA - Owner Dashboard</title>
+
   <style>
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
-      padding: 25px;
+      padding: 20px;
       font-family: Arial, sans-serif;
       background: #f0f7f2;
       color: #173d2b;
     }
+
     .container {
-      max-width: 650px;
-      margin: 30px auto;
+      max-width: 750px;
+      margin: 25px auto;
       background: white;
-      padding: 28px;
+      padding: 25px;
       border-radius: 16px;
       box-shadow: 0 8px 30px #173d2b18;
     }
+
     h1 { color: #176b3a; }
+
     input, select, button {
       width: 100%;
       padding: 13px;
-      margin: 10px 0;
+      margin: 8px 0;
       border: 1px solid #ccd9cf;
       border-radius: 8px;
-      font-size: 16px;
+      font-size: 15px;
     }
+
     button {
       background: #176b3a;
       color: white;
       border: none;
       cursor: pointer;
     }
+
+    button:hover { opacity: 0.9; }
+
     #logout { background: #555; }
+
+    .product-card {
+      border: 1px solid #dce8df;
+      border-radius: 12px;
+      padding: 15px;
+      margin: 12px 0;
+      background: #fbfefc;
+    }
+
+    .product-card h3 { margin-top: 0; }
+
+    .edit-btn { background: #2366b1; }
+    .delete-btn { background: #c0392b; }
+    .cancel-btn { background: #777; }
+
     #message { color: #176b3a; }
+    #productList { margin-top: 20px; }
   </style>
 </head>
+
 <body>
   <main class="container">
+
     <h1>GB KIRANA</h1>
     <h2>Owner Dashboard</h2>
 
     <p id="status">Checking login...</p>
 
     <form id="productForm" hidden>
-      <h3>Add New Product</h3>
+      <h3 id="formTitle">Add New Product</h3>
 
       <input id="name" placeholder="Product name" required>
 
@@ -71,11 +98,22 @@
         <option value="false">Not available</option>
       </select>
 
-      <button type="submit">Save Product</button>
+      <button id="saveButton" type="submit">Save Product</button>
+      <button id="cancelEdit" class="cancel-btn"
+        type="button" hidden>Cancel Edit</button>
     </form>
 
     <p id="message"></p>
+
+    <hr>
+
+    <section id="productsSection" hidden>
+      <h2>Manage Products</h2>
+      <div id="productList">Loading products...</div>
+    </section>
+
     <button id="logout" hidden>Logout</button>
+
   </main>
 
   <script type="module">
@@ -89,6 +127,10 @@
     import {
       addDoc,
       collection,
+      getDocs,
+      doc,
+      updateDoc,
+      deleteDoc,
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
@@ -96,52 +138,194 @@
     const status = document.getElementById("status");
     const message = document.getElementById("message");
     const logout = document.getElementById("logout");
+    const productList = document.getElementById("productList");
+    const productsSection = document.getElementById("productsSection");
 
-    onAuthStateChanged(auth, (user) => {
+    const nameInput = document.getElementById("name");
+    const priceInput = document.getElementById("price");
+    const categoryInput = document.getElementById("category");
+    const availableInput = document.getElementById("available");
+
+    const formTitle = document.getElementById("formTitle");
+    const saveButton = document.getElementById("saveButton");
+    const cancelEdit = document.getElementById("cancelEdit");
+
+    let editingId = null;
+
+    onAuthStateChanged(auth, async (user) => {
       if (user) {
         status.textContent = "Owner logged in";
         form.hidden = false;
         logout.hidden = false;
+        productsSection.hidden = false;
+
+        await loadProducts();
       } else {
         window.location.replace("owner.html");
       }
     });
 
+    // Load products from Firebase
+    async function loadProducts() {
+      productList.textContent = "Loading products...";
+
+      try {
+        const snapshot = await getDocs(collection(db, "products"));
+
+        productList.replaceChildren();
+
+        if (snapshot.empty) {
+          productList.textContent = "No products added yet.";
+          return;
+        }
+
+        snapshot.forEach((item) => {
+          const product = item.data();
+
+          const card = document.createElement("article");
+          card.className = "product-card";
+
+          const title = document.createElement("h3");
+          title.textContent = product.name || "Unnamed product";
+
+          const price = document.createElement("p");
+          price.textContent = "Price: ₹" + (product.price ?? "Not set");
+
+          const category = document.createElement("p");
+          category.textContent = "Category: " + (product.category || "Other");
+
+          const availability = document.createElement("p");
+          availability.textContent =
+            product.available === false ? "Not available" : "Available";
+
+          const editButton = document.createElement("button");
+          editButton.textContent = "Edit Product";
+          editButton.className = "edit-btn";
+          editButton.type = "button";
+
+          editButton.addEventListener("click", () => {
+            editingId = item.id;
+
+            nameInput.value = product.name || "";
+            priceInput.value = product.price ?? "";
+            categoryInput.value = product.category || "";
+            availableInput.value =
+              product.available === false ? "false" : "true";
+
+            formTitle.textContent = "Edit Product";
+            saveButton.textContent = "Update Product";
+            cancelEdit.hidden = false;
+
+            form.scrollIntoView({ behavior: "smooth" });
+          });
+
+          const deleteButton = document.createElement("button");
+          deleteButton.textContent = "Delete Product";
+          deleteButton.className = "delete-btn";
+          deleteButton.type = "button";
+
+          deleteButton.addEventListener("click", async () => {
+            const confirmed = confirm(
+              "Are you sure you want to delete " + (product.name || "this product") + "?"
+            );
+
+            if (!confirmed) return;
+
+            try {
+              await deleteDoc(doc(db, "products", item.id));
+              message.textContent = "Product deleted successfully!";
+
+              if (editingId === item.id) {
+                resetForm();
+              }
+
+              await loadProducts();
+            } catch (error) {
+              message.textContent = "Delete failed: " + error.message;
+            }
+          });
+
+          card.append(
+            title,
+            price,
+            category,
+            availability,
+            editButton,
+            deleteButton
+          );
+
+          productList.appendChild(card);
+        });
+
+      } catch (error) {
+        productList.textContent = "Unable to load products: " + error.message;
+      }
+    }
+
+    // Add or update product
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
-      const user = auth.currentUser;
-      if (!user) return;
+      if (!auth.currentUser) return;
 
-      const name = document.getElementById("name").value.trim();
-      const price = Number(document.getElementById("price").value);
-      const category = document.getElementById("category").value;
-      const available =
-        document.getElementById("available").value === "true";
+      const name = nameInput.value.trim();
+      const price = Number(priceInput.value);
+      const category = categoryInput.value;
+      const available = availableInput.value === "true";
 
       if (!name || !category || !Number.isFinite(price) || price < 0) {
         message.textContent = "Please enter valid product details.";
         return;
       }
 
-      message.textContent = "Saving product...";
+      saveButton.disabled = true;
+      message.textContent = editingId ? "Updating product..." : "Saving product...";
 
       try {
-        await addDoc(collection(db, "products"), {
+        const productData = {
           name,
           price,
           category,
           available,
-          createdAt: serverTimestamp()
-        });
+          updatedAt: serverTimestamp()
+        };
 
-        message.textContent = "Product saved successfully!";
-        form.reset();
+        if (editingId) {
+          await updateDoc(doc(db, "products", editingId), productData);
+          message.textContent = "Product updated successfully!";
+        } else {
+          await addDoc(collection(db, "products"), {
+            ...productData,
+            createdAt: serverTimestamp()
+          });
+          message.textContent = "Product saved successfully!";
+        }
+
+        resetForm();
+        await loadProducts();
+
       } catch (error) {
-        message.textContent = "Error saving product: " + error.message;
+        message.textContent = "Error: " + error.message;
+      } finally {
+        saveButton.disabled = false;
       }
     });
 
+    // Cancel editing
+    function resetForm() {
+      form.reset();
+      editingId = null;
+      formTitle.textContent = "Add New Product";
+      saveButton.textContent = "Save Product";
+      cancelEdit.hidden = true;
+    }
+
+    cancelEdit.addEventListener("click", () => {
+      resetForm();
+      message.textContent = "Edit cancelled.";
+    });
+
+    // Logout
     logout.addEventListener("click", async () => {
       await signOut(auth);
       window.location.replace("owner.html");
